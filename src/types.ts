@@ -28,7 +28,7 @@ export interface GitDiffResult {
 }
 
 export interface GitChange {
-  type: "addition" | "deletion" | "modification";
+  type: "addition" | "deletion";
   lineNumber: number;
   content: string;
   context?: string[];

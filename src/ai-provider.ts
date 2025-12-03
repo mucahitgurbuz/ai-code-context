@@ -81,12 +81,10 @@ export class OpenAIProvider extends AIProvider {
           totalTokens: response.data.usage.total_tokens,
         },
       };
-    } catch (error: any) {
-      throw new Error(
-        `OpenAI API request failed: ${
-          error.response?.data?.error?.message || error.message
-        }`
-      );
+    } catch (error: unknown) {
+      const axiosError = error as { response?: { data?: { error?: { message?: string } } }; message?: string };
+      const message = axiosError.response?.data?.error?.message || axiosError.message || "Unknown error";
+      throw new Error(`OpenAI API request failed: ${message}`);
     }
   }
 }
@@ -148,12 +146,10 @@ export class AnthropicProvider extends AIProvider {
             response.data.usage.output_tokens,
         },
       };
-    } catch (error: any) {
-      throw new Error(
-        `Anthropic API request failed: ${
-          error.response?.data?.error?.message || error.message
-        }`
-      );
+    } catch (error: unknown) {
+      const axiosError = error as { response?: { data?: { error?: { message?: string } } }; message?: string };
+      const message = axiosError.response?.data?.error?.message || axiosError.message || "Unknown error";
+      throw new Error(`Anthropic API request failed: ${message}`);
     }
   }
 }
@@ -215,12 +211,10 @@ export class LocalProvider extends AIProvider {
       return {
         content: response.data.message.content,
       };
-    } catch (error: any) {
-      throw new Error(
-        `Local API request failed: ${
-          error.response?.data?.error || error.message
-        }`
-      );
+    } catch (error: unknown) {
+      const axiosError = error as { response?: { data?: { error?: string } }; message?: string };
+      const message = axiosError.response?.data?.error || axiosError.message || "Unknown error";
+      throw new Error(`Local API request failed: ${message}`);
     }
   }
 }

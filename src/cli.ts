@@ -9,14 +9,41 @@ import * as path from "path";
 import { CodeAnalyzer } from "./analyzer";
 import { ConfigManager } from "./config";
 import { GitUtils } from "./git-utils";
-import { AICodeContextConfig } from "./types";
+import { AICodeContextConfig, AnalysisResult } from "./types";
+
+// CLI option interfaces for type safety
+interface InitOptions {
+  provider?: "openai" | "anthropic" | "local";
+  model?: string;
+  apiKey?: string;
+}
+
+interface AnalyzeOptions {
+  commit?: string;
+  staged?: boolean;
+  unstaged?: boolean;
+  file?: string;
+  output?: string;
+  auto?: boolean;
+}
+
+interface WatchOptions {
+  installHook?: boolean;
+  removeHook?: boolean;
+}
+
+interface ConfigOptions {
+  show?: boolean;
+  set?: string;
+  reset?: boolean;
+}
 
 const program = new Command();
 
 program
   .name("ai-context")
   .description("AI-powered code documentation that actually helps")
-  .version("1.0.0");
+  .version("1.0.2");
 
 program
   .command("init")
@@ -28,14 +55,12 @@ program
   )
   .option("--model <model>", "AI model to use")
   .option("--api-key <key>", "API key for the AI provider")
-  .action(async (options) => {
+  .action(async (options: InitOptions) => {
     try {
       await initializeProject(options);
-    } catch (error: any) {
-      console.error(
-        chalk.red("Error during initialization:"),
-        error?.message || "Unknown error"
-      );
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      console.error(chalk.red("Error during initialization:"), message);
       process.exit(1);
     }
   });
@@ -52,14 +77,12 @@ program
   .option("--file <path>", "Analyze specific file")
   .option("--output <path>", "Output file for the analysis report")
   .option("--auto", "Auto mode for git hooks (minimal output)")
-  .action(async (options) => {
+  .action(async (options: AnalyzeOptions) => {
     try {
       await analyzeCode(options);
-    } catch (error: any) {
-      console.error(
-        chalk.red("Error during analysis:"),
-        error?.message || "Unknown error"
-      );
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      console.error(chalk.red("Error during analysis:"), message);
       process.exit(1);
     }
   });
@@ -69,14 +92,12 @@ program
   .description("Watch for git commits and auto-analyze changes")
   .option("--install-hook", "Install git commit hook")
   .option("--remove-hook", "Remove git commit hook")
-  .action(async (options) => {
+  .action(async (options: WatchOptions) => {
     try {
       await watchForChanges(options);
-    } catch (error: any) {
-      console.error(
-        chalk.red("Error setting up watch:"),
-        error?.message || "Unknown error"
-      );
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      console.error(chalk.red("Error setting up watch:"), message);
       process.exit(1);
     }
   });
@@ -87,14 +108,12 @@ program
   .option("--show", "Show current configuration")
   .option("--set <key=value>", "Set configuration value")
   .option("--reset", "Reset to default configuration")
-  .action(async (options) => {
+  .action(async (options: ConfigOptions) => {
     try {
       await manageConfig(options);
-    } catch (error: any) {
-      console.error(
-        chalk.red("Error managing config:"),
-        error?.message || "Unknown error"
-      );
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      console.error(chalk.red("Error managing config:"), message);
       process.exit(1);
     }
   });
@@ -105,16 +124,14 @@ program
   .action(async () => {
     try {
       await showStatus();
-    } catch (error: any) {
-      console.error(
-        chalk.red("Error showing status:"),
-        error?.message || "Unknown error"
-      );
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      console.error(chalk.red("Error showing status:"), message);
       process.exit(1);
     }
   });
 
-async function initializeProject(options: any): Promise<void> {
+async function initializeProject(options: InitOptions): Promise<void> {
   console.log(chalk.blue("🤖 Initializing AI Code Context..."));
 
   const gitUtils = new GitUtils();
@@ -202,14 +219,14 @@ async function initializeProject(options: any): Promise<void> {
   );
 }
 
-async function analyzeCode(options: any): Promise<void> {
+async function analyzeCode(options: AnalyzeOptions): Promise<void> {
   const spinner = ora("Initializing analyzer...").start();
 
   try {
     const analyzer = new CodeAnalyzer();
     await analyzer.initialize();
 
-    let results: any[] = [];
+    let results: AnalysisResult[] = [];
 
     if (options.file) {
       spinner.text = `Analyzing file: ${options.file}`;
@@ -267,7 +284,7 @@ async function analyzeCode(options: any): Promise<void> {
   }
 }
 
-async function watchForChanges(options: any): Promise<void> {
+async function watchForChanges(options: WatchOptions): Promise<void> {
   const gitUtils = new GitUtils();
 
   if (options.installHook) {
@@ -288,7 +305,7 @@ async function watchForChanges(options: any): Promise<void> {
   console.log("  --remove-hook   Remove automatic analysis");
 }
 
-async function manageConfig(options: any): Promise<void> {
+async function manageConfig(options: ConfigOptions): Promise<void> {
   const configManager = new ConfigManager();
 
   if (options.show) {
@@ -299,16 +316,23 @@ async function manageConfig(options: any): Promise<void> {
   }
 
   if (options.set) {
-    const [key, value] = options.set.split("=");
-    if (!key || !value) {
+    const [key, ...valueParts] = options.set.split("=");
+    const value = valueParts.join("="); // Handle values containing '='
+    if (!key || value === undefined || value === "") {
       console.error(chalk.red("Error: Please provide key=value format"));
       return;
     }
 
-    const updates: any = {};
-    updates[key] = value;
+    // Parse value to appropriate type
+    let parsedValue: string | number | boolean = value;
+    if (value === "true") parsedValue = true;
+    else if (value === "false") parsedValue = false;
+    else if (!isNaN(Number(value)) && value !== "") parsedValue = Number(value);
+
+    const updates: Partial<AICodeContextConfig> = {};
+    (updates as Record<string, unknown>)[key] = parsedValue;
     await configManager.save(updates);
-    console.log(chalk.green(`✓ Configuration updated: ${key} = ${value}`));
+    console.log(chalk.green(`✓ Configuration updated: ${key} = ${parsedValue}`));
     return;
   }
 
@@ -423,8 +447,9 @@ async function updateReadme(
 }
 
 // Error handling
-process.on("unhandledRejection", (error: any) => {
-  console.error(chalk.red("Unhandled error:"), error.message);
+process.on("unhandledRejection", (error: Error | unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(chalk.red("Unhandled error:"), message);
   process.exit(1);
 });
 

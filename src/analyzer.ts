@@ -111,11 +111,14 @@ export class CodeAnalyzer {
   }
 
   private matchesPattern(filePath: string, pattern: string): boolean {
-    // Simple glob pattern matching
-    const regex = pattern
-      .replace(/\*\*/g, ".*")
-      .replace(/\*/g, "[^/]*")
-      .replace(/\?/g, "[^/]");
+    // Glob pattern matching with proper escaping
+    // First escape regex special characters except glob wildcards
+    let regex = pattern
+      .replace(/[.+^${}()|[\]\\]/g, "\\$&") // Escape regex special chars
+      .replace(/\*\*/g, "{{GLOBSTAR}}") // Temporarily replace **
+      .replace(/\*/g, "[^/]*") // * matches any chars except /
+      .replace(/\?/g, "[^/]") // ? matches single char except /
+      .replace(/{{GLOBSTAR}}/g, ".*"); // ** matches anything including /
 
     return new RegExp(`^${regex}$`).test(filePath);
   }

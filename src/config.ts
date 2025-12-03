@@ -84,12 +84,23 @@ export class ConfigManager {
   }
 
   getApiKey(): string {
-    return (
-      this.config.apiKey ||
-      process.env.OPENAI_API_KEY ||
-      process.env.ANTHROPIC_API_KEY ||
-      ""
-    );
+    // First check if API key is set in config
+    if (this.config.apiKey) {
+      return this.config.apiKey;
+    }
+
+    // Then check environment variables based on provider
+    switch (this.config.aiProvider) {
+      case "openai":
+        return process.env.OPENAI_API_KEY || "";
+      case "anthropic":
+        return process.env.ANTHROPIC_API_KEY || "";
+      case "local":
+        return ""; // Local provider doesn't need an API key
+      default:
+        // Fallback to checking both env vars
+        return process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY || "";
+    }
   }
 
   async createDefaultConfig(): Promise<void> {
@@ -100,28 +111,36 @@ export class ConfigManager {
   async validateConfig(): Promise<{ valid: boolean; errors: string[] }> {
     const errors: string[] = [];
 
-    if (!this.getApiKey()) {
+    if (!["openai", "anthropic", "local"].includes(this.config.aiProvider)) {
+      errors.push("aiProvider must be one of: openai, anthropic, local");
+    }
+
+    // API key is only required for cloud providers
+    if (this.config.aiProvider !== "local" && !this.getApiKey()) {
       errors.push(
         "API key is required. Set it in .aicontext.json or as environment variable (OPENAI_API_KEY or ANTHROPIC_API_KEY)"
       );
     }
 
-    if (!["openai", "anthropic", "local"].includes(this.config.aiProvider)) {
-      errors.push("aiProvider must be one of: openai, anthropic, local");
+    // Local provider should have a valid API URL
+    if (this.config.aiProvider === "local" && !this.config.apiUrl) {
+      errors.push(
+        "apiUrl is required for local provider. Set it in .aicontext.json (e.g., http://localhost:11434/api/chat)"
+      );
     }
 
     if (
-      this.config.maxTokens &&
-      (this.config.maxTokens < 100 || this.config.maxTokens > 8000)
+      this.config.maxTokens !== undefined &&
+      (this.config.maxTokens < 100 || this.config.maxTokens > 128000)
     ) {
-      errors.push("maxTokens should be between 100 and 8000");
+      errors.push("maxTokens should be between 100 and 128000");
     }
 
     if (
-      this.config.temperature &&
-      (this.config.temperature < 0 || this.config.temperature > 1)
+      this.config.temperature !== undefined &&
+      (this.config.temperature < 0 || this.config.temperature > 2)
     ) {
-      errors.push("temperature should be between 0 and 1");
+      errors.push("temperature should be between 0 and 2");
     }
 
     return {

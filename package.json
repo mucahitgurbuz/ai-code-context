@@ -1,10 +1,10 @@
 {
-  "name": "ai-code-context",
-  "version": "1.0.3",
-  "description": "AI-powered code documentation that actually helps - automatically generate and maintain contextual documentation for code changes",
+  "name": "cursor-rules-sync",
+  "version": "1.0.0",
+  "description": "Share cursor rules and copilot instructions across teams and repos from a central place",
   "main": "dist/cli.js",
   "bin": {
-    "ai-context": "dist/cli.js"
+    "cursor-rules": "dist/cli.js"
   },
   "scripts": {
     "build": "tsc",
@@ -19,27 +19,29 @@
     "prepublishOnly": "npm test && npm run build"
   },
   "keywords": [
-    "ai",
-    "documentation",
-    "code-analysis",
+    "cursor",
+    "cursor-rules",
+    "copilot",
+    "github-copilot",
+    "rules",
+    "sync",
     "git",
     "cli",
     "developer-tools",
     "automation",
     "typescript",
-    "openai",
-    "anthropic"
+    "team-collaboration"
   ],
-  "author": "AI Code Context Contributors",
+  "author": "Cursor Rules Sync Contributors",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/mucahitgurbuz/ai-code-context.git"
+    "url": "git+https://github.com/mucahitgurbuz/cursor-rules-sync.git"
   },
   "bugs": {
-    "url": "https://github.com/mucahitgurbuz/ai-code-context/issues"
+    "url": "https://github.com/mucahitgurbuz/cursor-rules-sync/issues"
   },
-  "homepage": "https://github.com/mucahitgurbuz/ai-code-context#readme",
+  "homepage": "https://github.com/mucahitgurbuz/cursor-rules-sync#readme",
   "engines": {
     "node": ">=16.0.0"
   },
@@ -47,12 +49,9 @@
     "commander": "^11.1.0",
     "simple-git": "^3.20.0",
     "fs-extra": "^11.1.1",
-    "axios": "^1.6.0",
     "chalk": "^4.1.2",
     "inquirer": "^8.2.6",
-    "ora": "^5.4.1",
-    "glob": "^10.3.10",
-    "yaml": "^2.3.4"
+    "ora": "^5.4.1"
   },
   "devDependencies": {
     "@types/node": "^20.8.0",

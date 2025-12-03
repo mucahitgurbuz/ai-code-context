@@ -4,30 +4,22 @@ import { Command } from "commander";
 import chalk from "chalk";
 import inquirer from "inquirer";
 import ora from "ora";
-import * as fs from "fs-extra";
-import * as path from "path";
-import { CodeAnalyzer } from "./analyzer";
 import { ConfigManager } from "./config";
-import { GitUtils } from "./git-utils";
-import { AICodeContextConfig, CommandOptions, AnalysisResult } from "./types";
+import { RulesManager } from "./rules-manager";
+import { SyncManager } from "./sync-manager";
+import { CommandOptions } from "./types";
 
 const program = new Command();
 
 program
-  .name("ai-context")
-  .description("AI-powered code documentation that actually helps")
-  .version("1.0.2");
+  .name("cursor-rules")
+  .description("Share cursor rules and copilot instructions across teams and repos")
+  .version("1.0.0");
 
 program
   .command("init")
-  .description("Initialize AI Code Context in the current project")
-  .option(
-    "--provider <provider>",
-    "AI provider (openai, anthropic, local)",
-    "openai"
-  )
-  .option("--model <model>", "AI model to use")
-  .option("--api-key <key>", "API key for the AI provider")
+  .description("Initialize cursor rules configuration in the current project")
+  .option("--central-repo <url>", "Central repository URL for rules")
   .action(async (options) => {
     try {
       await initializeProject(options);
@@ -43,24 +35,18 @@ program
   });
 
 program
-  .command("analyze")
-  .description("Analyze code changes and generate documentation")
-  .option(
-    "--commit <range>",
-    "Analyze specific commit range (e.g., HEAD~1..HEAD)"
-  )
-  .option("--staged", "Analyze staged changes")
-  .option("--unstaged", "Analyze unstaged changes")
-  .option("--file <path>", "Analyze specific file")
-  .option("--output <path>", "Output file for the analysis report")
-  .option("--auto", "Auto mode for git hooks (minimal output)")
+  .command("pull")
+  .description("Pull rules from central repository")
+  .option("--central-repo <url>", "Central repository URL (overrides config)")
+  .option("--branch <branch>", "Branch to pull from", "main")
+  .option("--force", "Force update even if files exist")
   .action(async (options) => {
     try {
-      await analyzeCode(options);
+      await pullRules(options);
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
-      console.error(chalk.red("Error during analysis:"), errorMessage);
+      console.error(chalk.red("Error pulling rules:"), errorMessage);
       if (error instanceof Error && error.stack && process.env.DEBUG) {
         console.error(chalk.gray(error.stack));
       }
@@ -69,20 +55,30 @@ program
   });
 
 program
-  .command("watch")
-  .description("Watch for git commits and auto-analyze changes")
-  .option("--install-hook", "Install git commit hook")
-  .option("--remove-hook", "Remove git commit hook")
-  .action(async (options) => {
+  .command("list")
+  .description("List current rule files in the project")
+  .action(async () => {
     try {
-      await watchForChanges(options);
+      await listRules();
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
-      console.error(chalk.red("Error setting up watch:"), errorMessage);
-      if (error instanceof Error && error.stack && process.env.DEBUG) {
-        console.error(chalk.gray(error.stack));
-      }
+      console.error(chalk.red("Error listing rules:"), errorMessage);
+      process.exit(1);
+    }
+  });
+
+program
+  .command("show")
+  .description("Show content of a rule file")
+  .argument("<file>", "Path to rule file (e.g., .cursorrules)")
+  .action(async (file) => {
+    try {
+      await showRule(file);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      console.error(chalk.red("Error showing rule:"), errorMessage);
       process.exit(1);
     }
   });
@@ -100,9 +96,6 @@ program
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
       console.error(chalk.red("Error managing config:"), errorMessage);
-      if (error instanceof Error && error.stack && process.env.DEBUG) {
-        console.error(chalk.gray(error.stack));
-      }
       process.exit(1);
     }
   });
@@ -117,198 +110,156 @@ program
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
       console.error(chalk.red("Error showing status:"), errorMessage);
-      if (error instanceof Error && error.stack && process.env.DEBUG) {
-        console.error(chalk.gray(error.stack));
-      }
       process.exit(1);
     }
   });
 
 async function initializeProject(options: CommandOptions): Promise<void> {
-  console.log(chalk.blue("🤖 Initializing AI Code Context..."));
-
-  const gitUtils = new GitUtils();
-
-  if (!(await gitUtils.isGitRepository())) {
-    console.error(
-      chalk.red(
-        "Error: This is not a git repository. Please run this command in a git project."
-      )
-    );
-    process.exit(1);
-  }
+  console.log(chalk.blue("🔧 Initializing Cursor Rules..."));
 
   const configManager = new ConfigManager();
+  const defaultConfig = configManager.get();
+  let config: Partial<typeof defaultConfig> = {};
 
-  // Interactive setup if no options provided
-  let config: Partial<AICodeContextConfig> = {};
-
-  if (!options.provider && !options.apiKey) {
+  if (!options.centralRepo) {
     const answers = await inquirer.prompt([
       {
-        type: "list",
-        name: "aiProvider",
-        message: "Which AI provider would you like to use?",
-        choices: [
-          { name: "OpenAI (GPT-4, GPT-3.5)", value: "openai" },
-          { name: "Anthropic (Claude)", value: "anthropic" },
-          { name: "Local/Self-hosted (Ollama, etc.)", value: "local" },
-        ],
-        default: "openai",
+        type: "input",
+        name: "centralRepository",
+        message: "Enter central repository URL (or press Enter to skip):",
+        default: "",
       },
       {
         type: "input",
-        name: "apiKey",
-        message: "Enter your API key (or press Enter to set later):",
-        when: (answers) => answers.aiProvider !== "local",
+        name: "rulesPath",
+        message: "Path for cursor rules file:",
+        default: ".cursorrules",
       },
       {
         type: "input",
-        name: "apiUrl",
-        message: "Enter your local API URL:",
-        default: "http://localhost:11434/api/chat",
-        when: (answers) => answers.aiProvider === "local",
+        name: "copilotInstructionsPath",
+        message: "Path for copilot instructions file:",
+        default: ".github/copilot-instructions.md",
       },
       {
         type: "confirm",
-        name: "autoCommitHook",
-        message: "Would you like to automatically analyze commits?",
+        name: "autoSync",
+        message: "Enable automatic sync on git pull?",
         default: false,
-      },
-      {
-        type: "confirm",
-        name: "updateReadme",
-        message: "Should we automatically update README.md with analysis?",
-        default: true,
       },
     ]);
 
     config = answers;
   } else {
     config = {
-      aiProvider: options.provider as "openai" | "anthropic" | "local" | undefined,
-      apiKey: options.apiKey,
-      model: options.model,
+      centralRepository: options.centralRepo,
     };
   }
 
-  // Save configuration
   await configManager.save(config);
 
-  // Install git hook if requested
-  if (config.autoCommitHook) {
-    await gitUtils.installCommitHook();
-    console.log(chalk.green("✓ Git commit hook installed"));
-  }
-
-  console.log(chalk.green("✓ AI Code Context initialized successfully!"));
+  console.log(chalk.green("✓ Cursor Rules initialized successfully!"));
   console.log(chalk.blue("\nNext steps:"));
-  console.log(
-    '  1. Run "ai-context analyze --commit HEAD~1..HEAD" to analyze recent changes'
-  );
-  console.log('  2. Run "ai-context status" to check your setup');
-  console.log(
-    '  3. Use "ai-context analyze --staged" before committing to review changes'
-  );
+  console.log('  1. Run "cursor-rules pull" to sync rules from central repository');
+  console.log('  2. Run "cursor-rules status" to check your setup');
+  console.log('  3. Run "cursor-rules list" to see current rule files');
 }
 
-async function analyzeCode(options: CommandOptions): Promise<void> {
-  const spinner = ora("Initializing analyzer...").start();
+interface PullOptions extends CommandOptions {
+  branch?: string;
+  force?: boolean;
+}
+
+async function pullRules(options: PullOptions): Promise<void> {
+  const spinner = ora("Pulling rules from central repository...").start();
 
   try {
-    const analyzer = new CodeAnalyzer();
-    await analyzer.initialize();
+    const configManager = new ConfigManager();
+    const config = await configManager.load();
 
-    let results: AnalysisResult[] = [];
-
-    if (options.file) {
-      spinner.text = `Analyzing file: ${options.file}`;
-      const result = await analyzer.analyzeFile(options.file);
-      results = [result];
-    } else if (options.commit) {
-      let from: string;
-      let to: string;
-      
-      if (options.commit.includes("..")) {
-        const parts = options.commit.split("..");
-        from = parts[0] || "HEAD~1";
-        to = parts[1] || "HEAD";
-      } else {
-        from = options.commit + "~1";
-        to = options.commit;
-      }
-
-      spinner.text = `Analyzing commits: ${from}..${to}`;
-      try {
-        results = await analyzer.analyzeCommitRange(from, to);
-      } catch (error) {
-        spinner.fail("Failed to analyze commits");
-        throw error;
-      }
-    } else if (options.staged) {
-      spinner.text = "Analyzing staged changes...";
-      results = await analyzer.analyzeStagedChanges();
-    } else if (options.unstaged) {
-      spinner.text = "Analyzing unstaged changes...";
-      results = await analyzer.analyzeUnstagedChanges();
-    } else {
-      spinner.fail(
-        "Please specify what to analyze (--commit, --staged, --unstaged, or --file)"
+    const repositoryUrl = options.centralRepo || config.centralRepository;
+    if (!repositoryUrl) {
+      spinner.fail("No central repository configured");
+      console.error(
+        chalk.red(
+          "Please set central repository URL using --central-repo or run 'cursor-rules init'"
+        )
       );
       return;
     }
 
-    spinner.text = "Generating report...";
-    const report = await analyzer.generateSummaryReport(results);
+    spinner.text = `Cloning repository: ${repositoryUrl}`;
+    const syncManager = new SyncManager();
+    const rules = await syncManager.pullFromRepository(
+      repositoryUrl,
+      options.branch || "main"
+    );
 
-    spinner.succeed("Analysis complete!");
-
-    if (options.auto) {
-      // Minimal output for git hooks
-      console.log(chalk.green(`Analyzed ${results.length} file(s)`));
+    if (rules.length === 0) {
+      spinner.warn("No rule files found in repository");
       return;
     }
 
-    // Output results
-    if (options.output) {
-      await fs.writeFile(options.output, report);
-      console.log(chalk.green(`Report saved to: ${options.output}`));
-    } else {
-      console.log("\n" + report);
+    spinner.text = `Syncing ${rules.length} rule file(s)...`;
+    const rulesManager = new RulesManager();
+    const result = await rulesManager.syncRules(rules, options.force || false);
+
+    spinner.succeed("Rules synced successfully!");
+
+    if (result.filesCreated.length > 0) {
+      console.log(chalk.green(`\n✓ Created ${result.filesCreated.length} file(s):`));
+      result.filesCreated.forEach((file) => {
+        console.log(chalk.gray(`   + ${file}`));
+      });
     }
 
-    // Update README if configured
-    const configManager = new ConfigManager();
-    const config = await configManager.load();
+    if (result.filesUpdated.length > 0) {
+      console.log(chalk.yellow(`\n✓ Updated ${result.filesUpdated.length} file(s):`));
+      result.filesUpdated.forEach((file) => {
+        console.log(chalk.gray(`   ~ ${file}`));
+      });
+    }
 
-    if (config.updateReadme && !options.auto) {
-      await updateReadme(report, config);
+    if (result.errors.length > 0) {
+      console.log(chalk.red(`\n✗ ${result.errors.length} error(s):`));
+      result.errors.forEach((error) => {
+        console.log(chalk.gray(`   ${error}`));
+      });
     }
   } catch (error) {
-    spinner.fail("Analysis failed");
+    spinner.fail("Failed to pull rules");
     throw error;
   }
 }
 
-async function watchForChanges(options: CommandOptions): Promise<void> {
-  const gitUtils = new GitUtils();
+async function listRules(): Promise<void> {
+  const rulesManager = new RulesManager();
+  const files = await rulesManager.listRuleFiles();
 
-  if (options.installHook) {
-    await gitUtils.installCommitHook();
-    console.log(chalk.green("✓ Git commit hook installed"));
-    console.log(chalk.blue("Now commits will be automatically analyzed!"));
+  if (files.length === 0) {
+    console.log(chalk.yellow("No rule files found in this project"));
     return;
   }
 
-  if (options.removeHook) {
-    await gitUtils.removeCommitHook();
-    console.log(chalk.green("✓ Git commit hook removed"));
+  console.log(chalk.blue("Rule files in this project:\n"));
+  for (const file of files) {
+    const content = await rulesManager.getRuleFileContent(file);
+    const size = content ? `${content.length} bytes` : "empty";
+    console.log(`  ${chalk.green("✓")} ${file} ${chalk.gray(`(${size})`)}`);
+  }
+}
+
+async function showRule(filePath: string): Promise<void> {
+  const rulesManager = new RulesManager();
+  const content = await rulesManager.getRuleFileContent(filePath);
+
+  if (!content) {
+    console.error(chalk.red(`File not found: ${filePath}`));
     return;
   }
 
-  console.log(chalk.blue("Git hook management:"));
-  console.log("  --install-hook  Install automatic analysis on commits");
-  console.log("  --remove-hook   Remove automatic analysis");
+  console.log(chalk.blue(`\nContent of ${filePath}:\n`));
+  console.log(content);
 }
 
 async function manageConfig(options: CommandOptions): Promise<void> {
@@ -328,8 +279,8 @@ async function manageConfig(options: CommandOptions): Promise<void> {
       return;
     }
 
-    const updates: Partial<AICodeContextConfig> = {};
-    (updates as Record<string, unknown>)[key] = value;
+    const updates: Record<string, unknown> = {};
+    updates[key] = value;
     await configManager.save(updates);
     console.log(chalk.green(`✓ Configuration updated: ${key} = ${value}`));
     return;
@@ -348,43 +299,31 @@ async function manageConfig(options: CommandOptions): Promise<void> {
 }
 
 async function showStatus(): Promise<void> {
-  console.log(chalk.blue("🤖 AI Code Context Status\n"));
+  console.log(chalk.blue("🔧 Cursor Rules Status\n"));
 
-  const gitUtils = new GitUtils();
   const configManager = new ConfigManager();
+  const rulesManager = new RulesManager();
 
-  // Check git repository
-  const isGitRepo = await gitUtils.isGitRepository();
-  console.log(
-    `Git Repository: ${isGitRepo ? chalk.green("✓") : chalk.red("✗")}`
-  );
-
-  if (isGitRepo) {
-    const currentBranch = await gitUtils.getCurrentBranch();
-    console.log(`Current Branch: ${chalk.yellow(currentBranch)}`);
-
-    const projectInfo = await gitUtils.getProjectInfo();
-    console.log(`Project Name: ${chalk.yellow(projectInfo.name)}`);
-  }
-
-  // Check configuration
   const config = await configManager.load();
   const validation = await configManager.validateConfig();
 
   console.log(
-    `\nConfiguration: ${
+    `Configuration: ${
       validation.valid ? chalk.green("✓ Valid") : chalk.red("✗ Invalid")
     }`
   );
-  console.log(`AI Provider: ${chalk.yellow(config.aiProvider)}`);
-  console.log(`Model: ${chalk.yellow(config.model || "default")}`);
   console.log(
-    `API Key: ${
-      config.apiKey || configManager.getApiKey()
-        ? chalk.green("✓ Set")
-        : chalk.red("✗ Missing")
+    `Central Repository: ${
+      config.centralRepository
+        ? chalk.green(config.centralRepository)
+        : chalk.yellow("Not configured")
     }`
   );
+  console.log(`Rules Path: ${chalk.yellow(config.rulesPath)}`);
+  console.log(
+    `Copilot Instructions: ${chalk.yellow(config.copilotInstructionsPath)}`
+  );
+  console.log(`Auto Sync: ${config.autoSync ? chalk.green("Enabled") : chalk.yellow("Disabled")}`);
 
   if (!validation.valid) {
     console.log(chalk.red("\nConfiguration Issues:"));
@@ -393,56 +332,15 @@ async function showStatus(): Promise<void> {
     );
   }
 
-  // Check git hook
-  const hookPath = path.join(process.cwd(), ".git", "hooks", "post-commit");
-  const hasHook = await fs.pathExists(hookPath);
-  console.log(
-    `Git Hook: ${
-      hasHook ? chalk.green("✓ Installed") : chalk.yellow("✗ Not installed")
-    }`
-  );
-
-  console.log(chalk.blue("\nReady to analyze code! 🚀"));
-}
-
-async function updateReadme(
-  report: string,
-  config: AICodeContextConfig
-): Promise<void> {
-  const readmePath = config.readmePath || "README.md";
-
-  if (!(await fs.pathExists(readmePath))) {
-    return;
+  const ruleFiles = await rulesManager.listRuleFiles();
+  console.log(`\nRule Files: ${chalk.yellow(ruleFiles.length.toString())}`);
+  if (ruleFiles.length > 0) {
+    ruleFiles.forEach((file) => {
+      console.log(chalk.gray(`  • ${file}`));
+    });
   }
 
-  const content = await fs.readFile(readmePath, "utf-8");
-
-  // Look for existing AI analysis section
-  const sectionMarker = "<!-- AI Code Context Analysis -->";
-  const startIndex = content.indexOf(sectionMarker);
-
-  let newContent: string;
-  if (startIndex !== -1) {
-    // Replace existing section
-    const endIndex = content.indexOf(sectionMarker, startIndex + 1);
-    if (endIndex !== -1) {
-      newContent =
-        content.substring(0, startIndex) +
-        `${sectionMarker}\n\n${report}\n\n${sectionMarker}` +
-        content.substring(endIndex + sectionMarker.length);
-    } else {
-      // End marker not found, append at the end
-      newContent =
-        content + `\n\n${sectionMarker}\n\n${report}\n\n${sectionMarker}`;
-    }
-  } else {
-    // Add new section at the end
-    newContent =
-      content + `\n\n${sectionMarker}\n\n${report}\n\n${sectionMarker}`;
-  }
-
-  await fs.writeFile(readmePath, newContent);
-  console.log(chalk.green(`✓ Updated ${readmePath} with analysis`));
+  console.log(chalk.blue("\nReady to sync rules! 🚀"));
 }
 
 // Error handling

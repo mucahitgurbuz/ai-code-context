@@ -1,67 +1,25 @@
 import * as fs from "fs-extra";
 import * as path from "path";
-import { AICodeContextConfig } from "./types";
 
-const DEFAULT_CONFIG: AICodeContextConfig = {
-  aiProvider: "openai",
-  model: "gpt-4",
-  maxTokens: 2000,
-  temperature: 0.3,
-  autoCommitHook: false,
-  includePatterns: [
-    "**/*.js",
-    "**/*.ts",
-    "**/*.tsx",
-    "**/*.jsx",
-    "**/*.py",
-    "**/*.java",
-    "**/*.cpp",
-    "**/*.c",
-    "**/*.h",
-  ],
-  excludePatterns: [
-    "node_modules/**",
-    "dist/**",
-    "build/**",
-    ".git/**",
-    "**/*.test.*",
-    "**/*.spec.*",
-  ],
-  outputFormat: "both",
-  updateReadme: true,
-  readmePath: "README.md",
-  languages: ["javascript", "typescript", "python", "java", "cpp", "c"],
-  customPrompts: {
-    codeAnalysis: `Analyze this code change and provide:
-1. A clear summary of what the code does
-2. The purpose and business value
-3. Key technical changes made
-4. Potential impact on the system
-5. Any concerns or suggestions for improvement
-
-Be concise but comprehensive. Focus on helping other developers understand the change quickly.`,
-    documentation: `Generate clear, helpful documentation for this code that includes:
-1. What this code does (functionality)
-2. Why it exists (purpose/business need)
-3. How to use it (if applicable)
-4. Important implementation details
-5. Any dependencies or prerequisites
-
-Write for developers who haven't seen this code before.`,
-    summary: `Provide a brief, one-paragraph summary of this code change that would be useful in a commit message or pull request description.`,
-  },
+const DEFAULT_CONFIG = {
+  centralRepository: "",
+  rulesPath: ".cursorrules",
+  copilotInstructionsPath: ".github/copilot-instructions.md",
+  autoSync: false,
+  includePatterns: ["**/.cursorrules", "**/.github/copilot-instructions.md"],
+  excludePatterns: ["node_modules/**", "dist/**", ".git/**"],
 };
 
 export class ConfigManager {
   private configPath: string;
-  private config: AICodeContextConfig;
+  private config: typeof DEFAULT_CONFIG;
 
   constructor(projectRoot: string = process.cwd()) {
-    this.configPath = path.join(projectRoot, ".aicontext.json");
+    this.configPath = path.join(projectRoot, ".cursorrules-config.json");
     this.config = { ...DEFAULT_CONFIG };
   }
 
-  async load(): Promise<AICodeContextConfig> {
+  async load(): Promise<typeof DEFAULT_CONFIG> {
     try {
       if (await fs.pathExists(this.configPath)) {
         const userConfig = await fs.readJson(this.configPath);
@@ -73,23 +31,14 @@ export class ConfigManager {
     return this.config;
   }
 
-  async save(config: Partial<AICodeContextConfig>): Promise<void> {
+  async save(config: Partial<typeof DEFAULT_CONFIG>): Promise<void> {
     this.config = { ...this.config, ...config };
     await fs.ensureFile(this.configPath);
     await fs.writeJson(this.configPath, this.config, { spaces: 2 });
   }
 
-  get(): AICodeContextConfig {
+  get(): typeof DEFAULT_CONFIG {
     return this.config;
-  }
-
-  getApiKey(): string {
-    return (
-      this.config.apiKey ||
-      process.env.OPENAI_API_KEY ||
-      process.env.ANTHROPIC_API_KEY ||
-      ""
-    );
   }
 
   async createDefaultConfig(): Promise<void> {
@@ -101,47 +50,22 @@ export class ConfigManager {
     const errors: string[] = [];
     const config = this.get();
 
-    // Only require API key for non-local providers
-    if (config.aiProvider !== "local" && !this.getApiKey()) {
-      const envVarName =
-        config.aiProvider === "openai"
-          ? "OPENAI_API_KEY"
-          : config.aiProvider === "anthropic"
-          ? "ANTHROPIC_API_KEY"
-          : "API_KEY";
-      errors.push(
-        `API key is required for ${config.aiProvider}. Set it in .aicontext.json or as ${envVarName} environment variable.`
-      );
-    }
-
-    // Validate local provider has API URL
-    if (config.aiProvider === "local" && !config.apiUrl) {
-      errors.push(
-        "apiUrl is required for local provider. Set it in .aicontext.json."
-      );
-    }
-
-    if (!["openai", "anthropic", "local"].includes(this.config.aiProvider)) {
-      errors.push("aiProvider must be one of: openai, anthropic, local");
-    }
-
-    if (
-      this.config.maxTokens &&
-      (this.config.maxTokens < 100 || this.config.maxTokens > 8000)
-    ) {
-      errors.push("maxTokens should be between 100 and 8000");
-    }
-
-    if (
-      this.config.temperature &&
-      (this.config.temperature < 0 || this.config.temperature > 1)
-    ) {
-      errors.push("temperature should be between 0 and 1");
+    if (config.centralRepository && !this.isValidRepositoryUrl(config.centralRepository)) {
+      errors.push("centralRepository must be a valid Git repository URL");
     }
 
     return {
       valid: errors.length === 0,
       errors,
     };
+  }
+
+  private isValidRepositoryUrl(url: string): boolean {
+    return (
+      url.startsWith("https://") ||
+      url.startsWith("http://") ||
+      url.startsWith("git@") ||
+      url.startsWith("git://")
+    );
   }
 }

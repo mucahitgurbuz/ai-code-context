@@ -31,10 +31,19 @@ export class CodeAnalyzer {
     fromCommit: string,
     toCommit: string = "HEAD"
   ): Promise<AnalysisResult[]> {
+    if (!fromCommit || !toCommit) {
+      throw new Error("Both fromCommit and toCommit must be specified");
+    }
+
     const diffs = await this.gitUtils.getDiffBetweenCommits(
       fromCommit,
       toCommit
     );
+
+    if (diffs.length === 0) {
+      return [];
+    }
+
     return this.analyzeDiffs(diffs);
   }
 
@@ -49,7 +58,15 @@ export class CodeAnalyzer {
   }
 
   async analyzeFile(filePath: string): Promise<AnalysisResult> {
+    if (!(await fs.pathExists(filePath))) {
+      throw new Error(`File not found: ${filePath}`);
+    }
+
     const content = await fs.readFile(filePath, "utf-8");
+    if (!content || content.trim().length === 0) {
+      throw new Error(`File is empty: ${filePath}`);
+    }
+
     const language = this.detectLanguage(filePath);
     const projectContext = await this.getProjectContext();
 
@@ -230,8 +247,22 @@ Focus on helping developers understand the change quickly and effectively.`;
     };
   }
 
-  private extractSections(response: string): any {
-    const sections: any = {};
+  private extractSections(response: string): {
+    summary?: string;
+    purpose?: string;
+    keyChanges?: string[];
+    impact?: string;
+    documentation?: string;
+    suggestions?: string[];
+  } {
+    const sections: {
+      summary?: string;
+      purpose?: string;
+      keyChanges?: string[];
+      impact?: string;
+      documentation?: string;
+      suggestions?: string[];
+    } = {};
 
     // Try to extract structured information using simple regex patterns
     const summaryMatch = response.match(

@@ -1,4 +1,4 @@
-import axios, { AxiosResponse } from "axios";
+import axios, { AxiosResponse, AxiosError } from "axios";
 import { AIProviderResponse, AICodeContextConfig } from "./types";
 
 export abstract class AIProvider {
@@ -47,6 +47,13 @@ export class OpenAIProvider extends AIProvider {
     prompt: string,
     content: string
   ): Promise<AIProviderResponse> {
+    const apiKey = this.config.apiKey || process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      throw new Error(
+        "OpenAI API key is required. Set it in .aicontext.json or OPENAI_API_KEY environment variable."
+      );
+    }
+
     try {
       const response: AxiosResponse = await axios.post(
         this.apiUrl,
@@ -67,9 +74,10 @@ export class OpenAIProvider extends AIProvider {
         },
         {
           headers: {
-            Authorization: `Bearer ${this.config.apiKey}`,
+            Authorization: `Bearer ${apiKey}`,
             "Content-Type": "application/json",
           },
+          timeout: 60000, // 60 second timeout
         }
       );
 
@@ -81,12 +89,35 @@ export class OpenAIProvider extends AIProvider {
           totalTokens: response.data.usage.total_tokens,
         },
       };
-    } catch (error: any) {
-      throw new Error(
-        `OpenAI API request failed: ${
-          error.response?.data?.error?.message || error.message
-        }`
-      );
+    } catch (error) {
+      const axiosError = error as AxiosError<{ error?: { message?: string } }>;
+      
+      // Handle rate limiting
+      if (axiosError.response?.status === 429) {
+        throw new Error(
+          "OpenAI API rate limit exceeded. Please wait before retrying."
+        );
+      }
+      
+      // Handle authentication errors
+      if (axiosError.response?.status === 401) {
+        throw new Error(
+          "OpenAI API authentication failed. Please check your API key."
+        );
+      }
+      
+      // Handle timeout
+      if (axiosError.code === "ECONNABORTED" || (axiosError.message && axiosError.message.includes("timeout"))) {
+        throw new Error(
+          "OpenAI API request timed out. Please try again or increase timeout."
+        );
+      }
+      
+      const errorMessage =
+        axiosError.response?.data?.error?.message ||
+        axiosError.message ||
+        "Unknown error";
+      throw new Error(`OpenAI API request failed: ${errorMessage}`);
     }
   }
 }
@@ -116,6 +147,13 @@ export class AnthropicProvider extends AIProvider {
     prompt: string,
     content: string
   ): Promise<AIProviderResponse> {
+    const apiKey = this.config.apiKey || process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      throw new Error(
+        "Anthropic API key is required. Set it in .aicontext.json or ANTHROPIC_API_KEY environment variable."
+      );
+    }
+
     try {
       const response: AxiosResponse = await axios.post(
         this.apiUrl,
@@ -131,10 +169,11 @@ export class AnthropicProvider extends AIProvider {
         },
         {
           headers: {
-            "x-api-key": this.config.apiKey,
+            "x-api-key": apiKey,
             "Content-Type": "application/json",
             "anthropic-version": "2023-06-01",
           },
+          timeout: 60000, // 60 second timeout
         }
       );
 
@@ -148,12 +187,35 @@ export class AnthropicProvider extends AIProvider {
             response.data.usage.output_tokens,
         },
       };
-    } catch (error: any) {
-      throw new Error(
-        `Anthropic API request failed: ${
-          error.response?.data?.error?.message || error.message
-        }`
-      );
+    } catch (error) {
+      const axiosError = error as AxiosError<{ error?: { message?: string } }>;
+      
+      // Handle rate limiting
+      if (axiosError.response?.status === 429) {
+        throw new Error(
+          "Anthropic API rate limit exceeded. Please wait before retrying."
+        );
+      }
+      
+      // Handle authentication errors
+      if (axiosError.response?.status === 401) {
+        throw new Error(
+          "Anthropic API authentication failed. Please check your API key."
+        );
+      }
+      
+      // Handle timeout
+      if (axiosError.code === "ECONNABORTED" || (axiosError.message && axiosError.message.includes("timeout"))) {
+        throw new Error(
+          "Anthropic API request timed out. Please try again or increase timeout."
+        );
+      }
+      
+      const errorMessage =
+        axiosError.response?.data?.error?.message ||
+        axiosError.message ||
+        "Unknown error";
+      throw new Error(`Anthropic API request failed: ${errorMessage}`);
     }
   }
 }
@@ -188,6 +250,12 @@ export class LocalProvider extends AIProvider {
     prompt: string,
     content: string
   ): Promise<AIProviderResponse> {
+    if (!this.apiUrl) {
+      throw new Error(
+        "Local API URL is required. Set it in .aicontext.json as apiUrl."
+      );
+    }
+
     try {
       const response: AxiosResponse = await axios.post(
         this.apiUrl,
@@ -209,18 +277,35 @@ export class LocalProvider extends AIProvider {
           headers: {
             "Content-Type": "application/json",
           },
+          timeout: 120000, // 120 second timeout for local models
         }
       );
 
       return {
         content: response.data.message.content,
       };
-    } catch (error: any) {
-      throw new Error(
-        `Local API request failed: ${
-          error.response?.data?.error || error.message
-        }`
-      );
+    } catch (error) {
+      const axiosError = error as AxiosError<{ error?: string }>;
+      
+      // Handle connection errors
+      if (axiosError.code === "ECONNREFUSED" || axiosError.code === "ENOTFOUND") {
+        throw new Error(
+          `Cannot connect to local AI API at ${this.apiUrl}. Please ensure the service is running.`
+        );
+      }
+      
+      // Handle timeout
+      if (axiosError.code === "ECONNABORTED" || (axiosError.message && axiosError.message.includes("timeout"))) {
+        throw new Error(
+          "Local AI API request timed out. The model may be processing a large request."
+        );
+      }
+      
+      const errorMessage =
+        axiosError.response?.data?.error ||
+        axiosError.message ||
+        "Unknown error";
+      throw new Error(`Local API request failed: ${errorMessage}`);
     }
   }
 }

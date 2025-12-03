@@ -105,7 +105,7 @@ describe("AI Providers", () => {
     let anthropicConfig: AICodeContextConfig;
 
     beforeEach(() => {
-      anthropicConfig = { ...mockConfig, aiProvider: "anthropic" };
+      anthropicConfig = { ...mockConfig, aiProvider: "anthropic", model: "claude-3-sonnet-20240229" };
       provider = new AnthropicProvider(anthropicConfig);
     });
 
@@ -133,7 +133,7 @@ describe("AI Providers", () => {
       expect(mockAxios.post).toHaveBeenCalledWith(
         "https://api.anthropic.com/v1/messages",
         expect.objectContaining({
-          model: "gpt-4",
+          model: "claude-3-sonnet-20240229",
           max_tokens: 2000,
           messages: expect.arrayContaining([
             expect.objectContaining({
@@ -161,6 +161,7 @@ describe("AI Providers", () => {
       localConfig = {
         ...mockConfig,
         aiProvider: "local",
+        model: "llama2",
         apiUrl: "http://localhost:11434/api/chat",
       };
       provider = new LocalProvider(localConfig);
@@ -183,7 +184,7 @@ describe("AI Providers", () => {
       expect(mockAxios.post).toHaveBeenCalledWith(
         "http://localhost:11434/api/chat",
         expect.objectContaining({
-          model: "gpt-4",
+          model: "llama2",
           messages: expect.arrayContaining([
             expect.objectContaining({ role: "system", content: "Test prompt" }),
             expect.objectContaining({ role: "user", content: "Test code" }),
@@ -223,7 +224,7 @@ describe("AI Providers", () => {
 
     it("should throw error for unsupported provider", () => {
       expect(() => {
-        createAIProvider({ ...mockConfig, aiProvider: "unsupported" as any });
+        createAIProvider({ ...mockConfig, aiProvider: "unsupported" as "openai" | "anthropic" | "local" });
       }).toThrow("Unsupported AI provider: unsupported");
     });
   });

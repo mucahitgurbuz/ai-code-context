@@ -99,10 +99,25 @@ export class ConfigManager {
 
   async validateConfig(): Promise<{ valid: boolean; errors: string[] }> {
     const errors: string[] = [];
+    const config = this.get();
 
-    if (!this.getApiKey()) {
+    // Only require API key for non-local providers
+    if (config.aiProvider !== "local" && !this.getApiKey()) {
+      const envVarName =
+        config.aiProvider === "openai"
+          ? "OPENAI_API_KEY"
+          : config.aiProvider === "anthropic"
+          ? "ANTHROPIC_API_KEY"
+          : "API_KEY";
       errors.push(
-        "API key is required. Set it in .aicontext.json or as environment variable (OPENAI_API_KEY or ANTHROPIC_API_KEY)"
+        `API key is required for ${config.aiProvider}. Set it in .aicontext.json or as ${envVarName} environment variable.`
+      );
+    }
+
+    // Validate local provider has API URL
+    if (config.aiProvider === "local" && !config.apiUrl) {
+      errors.push(
+        "apiUrl is required for local provider. Set it in .aicontext.json."
       );
     }
 

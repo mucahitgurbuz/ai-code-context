@@ -9,14 +9,14 @@ import * as path from "path";
 import { CodeAnalyzer } from "./analyzer";
 import { ConfigManager } from "./config";
 import { GitUtils } from "./git-utils";
-import { AICodeContextConfig } from "./types";
+import { AICodeContextConfig, CommandOptions, AnalysisResult } from "./types";
 
 const program = new Command();
 
 program
   .name("ai-context")
   .description("AI-powered code documentation that actually helps")
-  .version("1.0.0");
+  .version("1.0.2");
 
 program
   .command("init")
@@ -31,11 +31,13 @@ program
   .action(async (options) => {
     try {
       await initializeProject(options);
-    } catch (error: any) {
-      console.error(
-        chalk.red("Error during initialization:"),
-        error?.message || "Unknown error"
-      );
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      console.error(chalk.red("Error during initialization:"), errorMessage);
+      if (error instanceof Error && error.stack && process.env.DEBUG) {
+        console.error(chalk.gray(error.stack));
+      }
       process.exit(1);
     }
   });
@@ -55,11 +57,13 @@ program
   .action(async (options) => {
     try {
       await analyzeCode(options);
-    } catch (error: any) {
-      console.error(
-        chalk.red("Error during analysis:"),
-        error?.message || "Unknown error"
-      );
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      console.error(chalk.red("Error during analysis:"), errorMessage);
+      if (error instanceof Error && error.stack && process.env.DEBUG) {
+        console.error(chalk.gray(error.stack));
+      }
       process.exit(1);
     }
   });
@@ -72,11 +76,13 @@ program
   .action(async (options) => {
     try {
       await watchForChanges(options);
-    } catch (error: any) {
-      console.error(
-        chalk.red("Error setting up watch:"),
-        error?.message || "Unknown error"
-      );
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      console.error(chalk.red("Error setting up watch:"), errorMessage);
+      if (error instanceof Error && error.stack && process.env.DEBUG) {
+        console.error(chalk.gray(error.stack));
+      }
       process.exit(1);
     }
   });
@@ -90,11 +96,13 @@ program
   .action(async (options) => {
     try {
       await manageConfig(options);
-    } catch (error: any) {
-      console.error(
-        chalk.red("Error managing config:"),
-        error?.message || "Unknown error"
-      );
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      console.error(chalk.red("Error managing config:"), errorMessage);
+      if (error instanceof Error && error.stack && process.env.DEBUG) {
+        console.error(chalk.gray(error.stack));
+      }
       process.exit(1);
     }
   });
@@ -105,16 +113,18 @@ program
   .action(async () => {
     try {
       await showStatus();
-    } catch (error: any) {
-      console.error(
-        chalk.red("Error showing status:"),
-        error?.message || "Unknown error"
-      );
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      console.error(chalk.red("Error showing status:"), errorMessage);
+      if (error instanceof Error && error.stack && process.env.DEBUG) {
+        console.error(chalk.gray(error.stack));
+      }
       process.exit(1);
     }
   });
 
-async function initializeProject(options: any): Promise<void> {
+async function initializeProject(options: CommandOptions): Promise<void> {
   console.log(chalk.blue("🤖 Initializing AI Code Context..."));
 
   const gitUtils = new GitUtils();
@@ -176,7 +186,7 @@ async function initializeProject(options: any): Promise<void> {
     config = answers;
   } else {
     config = {
-      aiProvider: options.provider,
+      aiProvider: options.provider as "openai" | "anthropic" | "local" | undefined,
       apiKey: options.apiKey,
       model: options.model,
     };
@@ -202,26 +212,39 @@ async function initializeProject(options: any): Promise<void> {
   );
 }
 
-async function analyzeCode(options: any): Promise<void> {
+async function analyzeCode(options: CommandOptions): Promise<void> {
   const spinner = ora("Initializing analyzer...").start();
 
   try {
     const analyzer = new CodeAnalyzer();
     await analyzer.initialize();
 
-    let results: any[] = [];
+    let results: AnalysisResult[] = [];
 
     if (options.file) {
       spinner.text = `Analyzing file: ${options.file}`;
       const result = await analyzer.analyzeFile(options.file);
       results = [result];
     } else if (options.commit) {
-      const [from, to] = options.commit.includes("..")
-        ? options.commit.split("..")
-        : [options.commit + "~1", options.commit];
+      let from: string;
+      let to: string;
+      
+      if (options.commit.includes("..")) {
+        const parts = options.commit.split("..");
+        from = parts[0] || "HEAD~1";
+        to = parts[1] || "HEAD";
+      } else {
+        from = options.commit + "~1";
+        to = options.commit;
+      }
 
       spinner.text = `Analyzing commits: ${from}..${to}`;
-      results = await analyzer.analyzeCommitRange(from, to);
+      try {
+        results = await analyzer.analyzeCommitRange(from, to);
+      } catch (error) {
+        spinner.fail("Failed to analyze commits");
+        throw error;
+      }
     } else if (options.staged) {
       spinner.text = "Analyzing staged changes...";
       results = await analyzer.analyzeStagedChanges();
@@ -267,7 +290,7 @@ async function analyzeCode(options: any): Promise<void> {
   }
 }
 
-async function watchForChanges(options: any): Promise<void> {
+async function watchForChanges(options: CommandOptions): Promise<void> {
   const gitUtils = new GitUtils();
 
   if (options.installHook) {
@@ -288,7 +311,7 @@ async function watchForChanges(options: any): Promise<void> {
   console.log("  --remove-hook   Remove automatic analysis");
 }
 
-async function manageConfig(options: any): Promise<void> {
+async function manageConfig(options: CommandOptions): Promise<void> {
   const configManager = new ConfigManager();
 
   if (options.show) {
@@ -305,8 +328,8 @@ async function manageConfig(options: any): Promise<void> {
       return;
     }
 
-    const updates: any = {};
-    updates[key] = value;
+    const updates: Partial<AICodeContextConfig> = {};
+    (updates as Record<string, unknown>)[key] = value;
     await configManager.save(updates);
     console.log(chalk.green(`✓ Configuration updated: ${key} = ${value}`));
     return;
@@ -423,8 +446,13 @@ async function updateReadme(
 }
 
 // Error handling
-process.on("unhandledRejection", (error: any) => {
-  console.error(chalk.red("Unhandled error:"), error.message);
+process.on("unhandledRejection", (error: unknown) => {
+  const errorMessage =
+    error instanceof Error ? error.message : "Unknown unhandled rejection";
+  console.error(chalk.red("Unhandled error:"), errorMessage);
+  if (error instanceof Error && error.stack && process.env.DEBUG) {
+    console.error(chalk.gray(error.stack));
+  }
   process.exit(1);
 });
 

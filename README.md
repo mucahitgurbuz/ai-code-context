@@ -26,6 +26,12 @@ Developers spend **30%+ of their time** understanding existing code and writing 
 
 ## 🚀 Quick Start
 
+### Prerequisites
+
+- Node.js 16.0.0 or higher
+- Git repository initialized in your project
+- API key for your chosen AI provider (OpenAI, Anthropic, or local AI setup)
+
 ### Installation
 
 ```bash
@@ -165,14 +171,16 @@ ai-context init --provider anthropic --model claude-3-sonnet-20240229
 ollama serve
 
 # Configure AI Code Context
-ai-context init --provider local --model llama2
+ai-context init --provider local --model llama2 --api-url http://localhost:11434/api/chat
 ```
+
+**Note**: For local providers, you must specify the `apiUrl` in your configuration. The default is `http://localhost:11434/api/chat` for Ollama.
 
 ## 🔧 Commands
 
 ### `ai-context init`
 
-Initialize AI Code Context in your project.
+Initialize AI Code Context in your project. This creates a `.aicontext.json` configuration file.
 
 ```bash
 ai-context init [options]
@@ -180,7 +188,21 @@ ai-context init [options]
 Options:
   --provider <provider>  AI provider (openai, anthropic, local)
   --model <model>       AI model to use
-  --api-key <key>       API key for the AI provider
+  --api-key <key>       API key for the AI provider (optional, can be set via env var)
+  --api-url <url>       API URL for local providers (required for local)
+```
+
+**Examples:**
+```bash
+# Interactive setup
+ai-context init
+
+# Quick setup with OpenAI
+ai-context init --provider openai --model gpt-4
+
+# Setup with environment variable
+export OPENAI_API_KEY="your-key"
+ai-context init --provider openai
 ```
 
 ### `ai-context analyze`
@@ -197,6 +219,18 @@ Options:
   --file <path>     Analyze specific file
   --output <path>   Output file for the analysis report
   --auto           Auto mode for git hooks (minimal output)
+```
+
+**Error Handling:**
+- If API rate limits are exceeded, you'll get a clear error message
+- Authentication errors provide guidance on checking your API key
+- Timeout errors suggest retrying or using a smaller code change
+- Connection errors for local providers help diagnose service issues
+
+**Debug Mode:**
+Set `DEBUG=1` environment variable for detailed error stacks:
+```bash
+DEBUG=1 ai-context analyze --staged
 ```
 
 ### `ai-context watch`
@@ -324,17 +358,65 @@ npm run test:coverage
 - **Improved maintainability** with up-to-date documentation
 - **Language agnostic** - works with any codebase
 - **Privacy focused** - option for local AI processing
+- **Production ready** - comprehensive error handling and validation
+- **Type safe** - full TypeScript support for reliability
 
 ## 🛡️ Privacy & Security
 
-- **API Keys**: Stored locally in `.aicontext.json` or environment variables
+- **API Keys**: Stored locally in `.aicontext.json` or environment variables (never committed to git)
 - **Code Privacy**: Use local AI models to keep code on your infrastructure
 - **No Data Storage**: AI providers process requests but don't store your code
 - **Secure Transmission**: All API calls use HTTPS encryption
+- **Security Updates**: Regularly updated dependencies with security patches
+- **Input Validation**: Comprehensive validation to prevent injection attacks
 
 ## 📄 License
 
 MIT © [AI Code Context Contributors](LICENSE)
+
+## 🔧 Troubleshooting
+
+### Common Issues
+
+**"API key is required" error:**
+- Ensure your API key is set in `.aicontext.json` or as an environment variable
+- For OpenAI: Set `OPENAI_API_KEY` environment variable
+- For Anthropic: Set `ANTHROPIC_API_KEY` environment variable
+- For local providers: Ensure `apiUrl` is configured in `.aicontext.json`
+
+**"Rate limit exceeded" error:**
+- Wait a few minutes before retrying
+- Consider using a different AI provider
+- For local providers, ensure your service can handle the request volume
+
+**"Connection refused" for local providers:**
+- Verify your local AI service is running (e.g., `ollama serve`)
+- Check that the `apiUrl` in your config matches your service URL
+- Test the connection: `curl http://localhost:11434/api/chat`
+
+**"File not found" error:**
+- Ensure you're running the command from the project root
+- Check that the file path is correct relative to the project root
+- Verify the file exists and is readable
+
+**Timeout errors:**
+- Large code changes may timeout (default: 60s for cloud, 120s for local)
+- Try analyzing smaller commit ranges
+- For local providers, consider using a faster model
+
+**Git hook not working:**
+- Ensure the hook file has execute permissions: `chmod +x .git/hooks/post-commit`
+- Verify the hook was installed correctly: `cat .git/hooks/post-commit`
+- Check git hook execution: `git config core.hooksPath`
+
+### Debug Mode
+
+Enable detailed error information:
+```bash
+DEBUG=1 ai-context analyze --staged
+```
+
+This will show full error stacks and additional diagnostic information.
 
 ## 🙋‍♂️ Support
 

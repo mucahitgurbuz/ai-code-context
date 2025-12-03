@@ -26,9 +26,14 @@ export class GitUtils {
     return status.current || "main";
   }
 
-  async getRecentCommits(count: number = 10): Promise<any[]> {
+  async getRecentCommits(count: number = 10): Promise<Array<{ hash: string; date: string; message: string; author_name: string }>> {
     const log = await this.git.log({ maxCount: count });
-    return [...log.all];
+    return log.all.map((commit) => ({
+      hash: commit.hash,
+      date: commit.date,
+      message: commit.message,
+      author_name: commit.author_name,
+    }));
   }
 
   async getDiffBetweenCommits(
@@ -49,10 +54,14 @@ export class GitUtils {
       ]);
       const changes = this.parseDiffOutput(fileDiff);
 
+      const fileWithStats = file as typeof file & {
+        insertions?: number;
+        deletions?: number;
+      };
       results.push({
         file: file.file,
-        additions: (file as any).insertions || 0,
-        deletions: (file as any).deletions || 0,
+        additions: fileWithStats.insertions || 0,
+        deletions: fileWithStats.deletions || 0,
         changes,
         content: await this.getFileContent(file.file),
       });
@@ -69,10 +78,14 @@ export class GitUtils {
       const fileDiff = await this.git.diff(["--cached", "--", file.file]);
       const changes = this.parseDiffOutput(fileDiff);
 
+      const fileWithStats = file as typeof file & {
+        insertions?: number;
+        deletions?: number;
+      };
       results.push({
         file: file.file,
-        additions: (file as any).insertions || 0,
-        deletions: (file as any).deletions || 0,
+        additions: fileWithStats.insertions || 0,
+        deletions: fileWithStats.deletions || 0,
         changes,
         content: await this.getFileContent(file.file),
       });
@@ -89,10 +102,14 @@ export class GitUtils {
       const fileDiff = await this.git.diff(["--", file.file]);
       const changes = this.parseDiffOutput(fileDiff);
 
+      const fileWithStats = file as typeof file & {
+        insertions?: number;
+        deletions?: number;
+      };
       results.push({
         file: file.file,
-        additions: (file as any).insertions || 0,
-        deletions: (file as any).deletions || 0,
+        additions: fileWithStats.insertions || 0,
+        deletions: fileWithStats.deletions || 0,
         changes,
         content: await this.getFileContent(file.file),
       });
@@ -167,9 +184,17 @@ export class GitUtils {
     return undefined;
   }
 
-  async getFileHistory(filePath: string, maxCount: number = 5): Promise<any[]> {
+  async getFileHistory(
+    filePath: string,
+    maxCount: number = 5
+  ): Promise<Array<{ hash: string; date: string; message: string; author_name: string }>> {
     const log = await this.git.log({ file: filePath, maxCount });
-    return [...log.all];
+    return log.all.map((commit) => ({
+      hash: commit.hash,
+      date: commit.date,
+      message: commit.message,
+      author_name: commit.author_name,
+    }));
   }
 
   async getProjectInfo(): Promise<{ name: string; remoteUrl?: string }> {

@@ -61,3 +61,20 @@ export interface ProjectContext {
   languages: string[];
   mainPurpose: string;
 }
+
+export interface CommandOptions {
+  provider?: "openai" | "anthropic" | "local";
+  model?: string;
+  apiKey?: string;
+  commit?: string;
+  staged?: boolean;
+  unstaged?: boolean;
+  file?: string;
+  output?: string;
+  auto?: boolean;
+  installHook?: boolean;
+  removeHook?: boolean;
+  show?: boolean;
+  set?: string;
+  reset?: boolean;
+}

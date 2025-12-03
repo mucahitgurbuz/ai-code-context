@@ -124,7 +124,9 @@ describe("ConfigManager", () => {
 
     it("should detect invalid AI provider", async () => {
       configManager.get().apiKey = "test-key";
-      (configManager.get() as any).aiProvider = "invalid-provider";
+      // Use type assertion to test invalid provider validation
+      const config = configManager.get();
+      Object.assign(config, { aiProvider: "invalid-provider" as "openai" });
 
       const validation = await configManager.validateConfig();
 

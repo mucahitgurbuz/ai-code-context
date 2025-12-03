@@ -1,63 +1,31 @@
-export interface AICodeContextConfig {
-  aiProvider: "openai" | "anthropic" | "local";
-  apiKey?: string;
-  apiUrl?: string;
-  model?: string;
-  maxTokens?: number;
-  temperature?: number;
-  autoCommitHook?: boolean;
+export interface RulesConfig {
+  centralRepository?: string;
+  rulesPath?: string;
+  copilotInstructionsPath?: string;
+  autoSync?: boolean;
   includePatterns?: string[];
   excludePatterns?: string[];
-  outputFormat?: "markdown" | "comments" | "both";
-  updateReadme?: boolean;
-  readmePath?: string;
-  languages?: string[];
-  customPrompts?: {
-    codeAnalysis?: string;
-    documentation?: string;
-    summary?: string;
-  };
 }
 
-export interface GitDiffResult {
-  file: string;
-  additions: number;
-  deletions: number;
-  changes: GitChange[];
-  content?: string;
+export interface CommandOptions {
+  centralRepo?: string;
+  rulesPath?: string;
+  copilotPath?: string;
+  force?: boolean;
+  show?: boolean;
+  set?: string;
+  reset?: boolean;
 }
 
-export interface GitChange {
-  type: "addition" | "deletion" | "modification";
-  lineNumber: number;
+export interface RuleFile {
+  path: string;
   content: string;
-  context?: string[];
+  type: "cursorrules" | "copilot-instructions" | "custom";
 }
 
-export interface AnalysisResult {
-  file: string;
-  language: string;
-  summary: string;
-  purpose: string;
-  keyChanges: string[];
-  impact: string;
-  documentation: string;
-  suggestions: string[];
-}
-
-export interface AIProviderResponse {
-  content: string;
-  usage?: {
-    promptTokens: number;
-    completionTokens: number;
-    totalTokens: number;
-  };
-}
-
-export interface ProjectContext {
-  name: string;
-  type: string;
-  framework?: string;
-  languages: string[];
-  mainPurpose: string;
+export interface SyncResult {
+  success: boolean;
+  filesUpdated: string[];
+  filesCreated: string[];
+  errors: string[];
 }
